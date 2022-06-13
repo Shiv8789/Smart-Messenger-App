@@ -1,53 +1,47 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../screens/chatroom.dart';
-import '../auth/authmethods.dart';
-import 'package:messengerapp/group_chats/groupscreen.dart';
+import 'package:flutter/material.dart';
+import 'creategroup.dart';
 
-class Home extends StatefulWidget {
-  Home({Key? key}) : super(key: key);
+class AddMembersInGroup extends StatefulWidget {
+  const AddMembersInGroup({Key? key}) : super(key: key);
 
   @override
-  _HomeState createState() => _HomeState();
+  State<AddMembersInGroup> createState() => _AddMembersInGroupState();
 }
 
-class _HomeState extends State<Home> with WidgetsBindingObserver {
-  Map<String, dynamic>? userMap;
-  bool isLoading = false;
+class _AddMembersInGroupState extends State<AddMembersInGroup> {
   final TextEditingController _search = TextEditingController();
+  FirebaseFirestore _firestore = FirebaseFirestore.instance;
   FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  //int _page = 0;
-  // GlobalKey<CurvedNavigationBarState> _bottomNavigationKey = GlobalKey();
+  List<Map<String, dynamic>> membersList = [];
+  bool isLoading = false;
+  Map<String, dynamic>? userMap;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance!.addObserver(this);
-    setStatus("Online");
+    getCurrentUserDetails();
   }
 
-  void setStatus(String status) async {
-    await _firestore.collection('users').doc(_auth.currentUser!.uid).update({
-      "status": status,
+  void getCurrentUserDetails() async {
+    await _firestore
+        .collection('users')
+        .doc(_auth.currentUser!.uid)
+        .get()
+        .then((map) {
+      setState(() {
+        membersList.add({
+          "name": map['name'],
+          "email": map['email'],
+          "uid": map['uid'],
+          "isAdmin": true,
+        });
+      });
     });
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // online
-      setStatus("Online");
-    } else {
-      // offline
-      setStatus("Offline");
-    }
-  }
-
   void onSearch() async {
-    FirebaseFirestore _firestore = FirebaseFirestore.instance;
-
     setState(() {
       isLoading = true;
     });
@@ -65,26 +59,52 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
     });
   }
 
-  String chatRoomId(String user1, String user2) {
-    if (user1[0].toLowerCase().codeUnits[0] >
-        user2.toLowerCase().codeUnits[0]) {
-      return "$user1$user2";
-    } else {
-      return "$user2$user1";
+  void onResultTap() {
+    bool isAlreadyExist = false;
+
+    for (int i = 0; i < membersList.length; i++) {
+      if (membersList[i]['uid'] == userMap!['uid']) {
+        isAlreadyExist = true;
+      }
+    }
+
+    if (!isAlreadyExist) {
+      setState(() {
+        membersList.add({
+          "name": userMap!['name'],
+          "email": userMap!['email'],
+          "uid": userMap!['uid'],
+          "isAdmin": false,
+        });
+
+        userMap = null;
+      });
+    }
+  }
+
+  void onRemoveMembers(int index) {
+    if (membersList[index]['uid'] != _auth.currentUser!.uid) {
+      setState(() {
+        membersList.removeAt(index);
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final Size size = MediaQuery.of(context).size;
+
     return SafeArea(
       child: Scaffold(
         appBar: AppBar(
-          title: Text("Messenger ChatBook"),
+          title: Text(
+            "Create New Group",
+            style: TextStyle(
+                color: Colors.white, fontSize: 25, fontWeight: FontWeight.bold),
+          ),
           automaticallyImplyLeading: false,
-          actions: [
-            IconButton(
-                icon: Icon(Icons.logout), onPressed: () => logOut(context))
-          ],
+          centerTitle: true,
+          leading: Icon(Icons.arrow_back_ios_new),
           flexibleSpace: Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -93,18 +113,42 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
             ),
           ),
         ),
-        body: isLoading
-            ? Center(
-                child: CircularProgressIndicator(),
-              )
-            : Container(
-                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 20),
-                child: Column(
-                  children: [
-                    SizedBox(
-                      height: 20,
-                    ),
-                    Container(
+        body: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(height: 10,),
+              Flexible(
+                child: ListView.builder(
+                  itemCount: membersList.length,
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    return Card(
+                      elevation: 32,
+                      shadowColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: ListTile(
+                        onTap: () => onRemoveMembers(index),
+                        leading: Icon(
+                          Icons.account_circle,
+                          color: Colors.green,
+                          size: 35,
+                        ),
+                        title: Text(membersList[index]['name']),
+                        subtitle: Text(membersList[index]['email']),
+                        trailing: Icon(Icons.close),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              SizedBox(
+                height: size.height / 20,
+              ),
+             Container(
                       padding: EdgeInsets.all(5),
                       width: double.infinity,
                       alignment: Alignment.center,
@@ -129,10 +173,17 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                         ),
                       ),
                     ),
-                    SizedBox(
-                      height: 20,
-                    ),
-                    GestureDetector(
+              SizedBox(
+                height: size.height / 50,
+              ),
+              isLoading
+                  ? Container(
+                      height: size.height / 12,
+                      width: size.height / 12,
+                      alignment: Alignment.center,
+                      child: CircularProgressIndicator(),
+                    )
+                  :GestureDetector(
                       onTap: () {
                         onSearch();
                       },
@@ -151,30 +202,15 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                                 fontWeight: FontWeight.bold)),
                       ),
                     ),
-                    SizedBox(
-                      height: 30,
-                    ),
-                    userMap != null && userMap!['uid'] != _auth.currentUser!.uid
+                    SizedBox(height: 20,),
+               userMap != null && userMap!['uid'] != _auth.currentUser!.uid
                         ? Card(
                             elevation: 32,
                             shadowColor: Colors.black,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20)),
                             child: ListTile(
-                              onTap: () {
-                                String roomId = chatRoomId(
-                                    _auth.currentUser!.displayName!,
-                                    userMap!['name']);
-
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) => ChatRoom(
-                                      chatRoomId: roomId,
-                                      userMap: userMap!,
-                                    ),
-                                  ),
-                                );
-                              },
+                              onTap: onResultTap,
                               leading:
                                   Icon(Icons.account_box, color: Colors.black),
                               title: Text(
@@ -197,17 +233,21 @@ class _HomeState extends State<Home> with WidgetsBindingObserver {
                             ),
                           )
                         : Container(),
-                  ],
-                ),
-              ),
-        floatingActionButton: FloatingActionButton(
-          child: Icon(Icons.group),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => GroupChatHomeScreen(),
-            ),
+            ],
           ),
         ),
+        floatingActionButton: membersList.length >= 2
+            ? FloatingActionButton(
+                child: Icon(Icons.forward),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => CreateGroup(
+                      membersList: membersList,
+                    ),
+                  ),
+                ),
+              )
+            : SizedBox(),
       ),
     );
   }
